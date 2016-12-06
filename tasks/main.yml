@@ -14,6 +14,222 @@
 #   under the License.
 #
 
-- debug:
-    msg: "This is no-op for now"
+# https://github.com/kokosing/docker-release/issues/3
+- name: Initialize virtual environment with up-to-date setuptools
+  pip:
+    name: "setuptools"
+    state: "latest"
+    editable: "no"
+    virtualenv: "{{ kolla_ansible_venv }}"
 
+- name: Install Kolla-Ansible
+  pip:
+    name: "git+https://git.openstack.org/openstack/kolla-ansible"
+    state: "latest"
+    editable: "no"
+    virtualenv: "{{ kolla_ansible_venv }}"
+
+- name: Setup kolla-ansible roles in the default Ansible role path
+  file:
+    src: "{{ kolla_ansible_roles }}/"
+    dest: "{{ weirdo_extra_roles }}"
+    state: "link"
+
+- name: Include default kolla-ansible variables
+  include_vars:
+    file: "{{ kolla_ansible_vars }}"
+
+- name: Generate kolla-ansible passwords
+  command: >
+    {{ kolla_ansible_genpwd }} -p {{ kolla_ansible_passwords }}
+
+- name: Include generated kolla-ansible passwords
+  include_vars:
+    file: "{{ kolla_ansible_passwords }}"
+
+- name: Add the host to the kolla-ansible groups
+  add_host:
+    name: "{{ inventory_hostname }}"
+    groups: "{{ kolla_groups |join(',') }}"
+  vars:
+    kolla_groups:
+      - control
+      - network
+      - compute
+      - storage
+      - monitoring
+      - collectd
+      - baremetal
+      - grafana
+      - etcd
+      - kibana
+      - telegraf
+      - elasticsearch
+      - haproxy
+      - mariadb
+      - rabbitmq
+      - mongodb
+      - keystone
+      - glance
+      - nova
+      - neutron
+      - cinder
+      - cloudkitty
+      - memcached
+      - horizon
+      - swift
+      - barbican
+      - heat
+      - murano
+      - ceph
+      - ironic
+      - influxdb
+      - magnum
+      - sahara
+      - solum
+      - mistral
+      - manila
+      - gnocchi
+      - ceilometer
+      - aodh
+      - congress
+      - tacker
+      - tempest
+      - senlin
+      - vmtp
+      - trove
+      - watcher
+      - rally
+      - searchlight
+      - octavia
+      - glance-api
+      - glance-registry
+      - nova-api
+      - nova-conductor
+      - nova-consoleauth
+      - nova-novncproxy
+      - nova-scheduler
+      - nova-spicehtml5proxy
+      - nova-compute-ironic
+      - neutron-server
+      - neutron-dhcp-agent
+      - neutron-l3-agent
+      - neutron-lbaas-agent
+      - neutron-metadata-agent
+      - neutron-vpnaas-agent
+      - ceph-mon
+      - ceph-rgw
+      - ceph-osd
+      - cinder-api
+      - cinder-backup
+      - cinder-scheduler
+      - cinder-volume
+      - cloudkitty-api
+      - cloudkitty-processor
+      - iscsid
+      - tgtd
+      - manila-api
+      - manila-scheduler
+      - manila-share
+      - manila-data
+      - swift-proxy-server
+      - swift-account-server
+      - swift-container-server
+      - swift-object-server
+      - barbican-api
+      - barbican-keystone-listener
+      - barbican-worker
+      - trove-api
+      - trove-conductor
+      - trove-taskmanager
+      - heat-api
+      - heat-api-cfn
+      - heat-engine
+      - murano-api
+      - murano-engine
+      - ironic-api
+      - ironic-conductor
+      - ironic-inspector
+      - ironic-pxe
+      - magnum-api
+      - magnum-conductor
+      - solum-api
+      - solum-worker
+      - solum-deployer
+      - solum-conductor
+      - mistral-api
+      - mistral-executor
+      - mistral-engine
+      - aodh-api
+      - aodh-evaluator
+      - aodh-listener
+      - aodh-notifier
+      - gnocchi-api
+      - gnocchi-statsd
+      - gnocchi-metricd
+      - sahara-api
+      - sahara-engine
+      - ceilometer-api
+      - ceilometer-central
+      - ceilometer-notification
+      - ceilometer-collector
+      - ceilometer-compute
+      - congress-api
+      - congress-datasource
+      - congress-policy-engine
+      - multipathd
+      - watcher-api
+      - watcher-engine
+      - watcher-applier
+      - senlin-api
+      - senlin-engine
+      - searchlight-api
+      - searchlight-listener
+      - octavia-api
+      - octavia-health-manager
+      - octavia-housekeeping
+      - octavia-worker
+
+# Override redhat_pkg_install to prevent epel-release installation
+# https://github.com/openstack/kolla-ansible/blob/7f1084808b34cfc32683e4259f88e29fd24e53be/ansible/roles/baremetal/defaults/main.yml#L21
+# Warning: bug in include_role around the static parameter: https://github.com/ansible/ansible/issues/19438
+- name: Include kolla-ansible baremetal role (bootstrap-servers)
+  vars:
+    action: "bootstrap-servers"
+    redhat_pkg_install:
+      - docker-engine-1.11.0
+      - git
+      - python-setuptools
+      - ntp
+  include_role:
+    name: "baremetal"
+  static: no
+
+# Work around Docker MTU issue https://bugs.launchpad.net/kolla-ansible/+bug/1654395
+- block:
+    - name: Override docker unit file to adjust MTU
+      replace:
+        dest: "/etc/systemd/system/docker.service.d/kolla.conf"
+        regexp: "(ExecStart=(/usr/bin/dockerd|/usr/bin/docker daemon)).*(?!--mtu 1300)"
+        replace: '\1 --mtu 1300'
+
+    - name: Reload systemctl
+      command: systemctl daemon-reload
+
+    - name: Restart docker
+      service:
+        name: "docker"
+        state: "restarted"
+
+- name: Retrieve kolla
+  git:
+    repo: "{{ kolla_repository }}"
+    dest: "{{ clone_path }}"
+    version: "{{ version }}"
+    force: "yes"
+
+- name: Build images
+  command: tox -e build-centos-binary
+  args:
+    chdir: "{{ clone_path }}"
+  when: test == "build"
