@@ -14,7 +14,6 @@
 #   under the License.
 #
 
-- include: repositories.yml
-- include: packages.yml
-- include: setup.yml
-- include: run.yml
+- debug:
+    msg: "This is no-op for now"
+
