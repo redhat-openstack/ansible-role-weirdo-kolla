@@ -14,6 +14,48 @@
 #   under the License.
 #
 
-- debug:
-    msg: "This is no-op for now"
+- name: Ensure python-virtualenv is installed
+  package:
+    name: "python-virtualenv"
+    state: "present"
 
+# https://github.com/kokosing/docker-release/issues/3
+- name: Initialize virtual environment with up-to-date setuptools
+  pip:
+    name: "setuptools"
+    state: "latest"
+    virtualenv: "/tmp/kolla-ansible"
+
+- name: Install kolla-ansible
+  pip:
+    name: "https://github.com/openstack/kolla-ansible.git"
+    state: "present"
+    virtualenv: "/tmp/kolla-ansible"
+
+# kolla-ansible abstracts the ansible-playbook command with the kolla-ansible
+# tool.
+# We don't need it's features and we don't want to hide the tasks that are
+# run as part of the host bootstrap -- this is why we include the role here
+# natively.
+- name: Create default Ansible directory
+  file:
+    path: "/etc/ansible"
+    state: "directory"
+
+- name: Setup kolla-ansible roles in the default Ansible role path
+  file:
+    src: "/etc/ansible/roles"
+    dest: "/tmp/kolla-ansible/share/kolla/ansible/roles/"
+
+# Override redhat_pkg_install to prevent epel-release installation
+# https://github.com/openstack/kolla-ansible/blob/7f1084808b34cfc32683e4259f88e29fd24e53be/ansible/roles/baremetal/defaults/main.yml#L21
+- name: Include kolla-ansible baremetal role (bootstrap-servers)
+  vars:
+    action: "bootstrap-servers"
+    redhat_pkg_install:
+      - docker-engine-1.11.0
+      - git
+      - python-setuptools
+      - ntp
+  include_role:
+    name: "baremetal"
