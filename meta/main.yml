@@ -15,11 +15,11 @@
 #
 
 galaxy_info:
-  author: redhat-openstack
+  author: rdo-infra
   description: Kolla integration tests implementation for WeIRDO
   company: Red Hat
   license: Apache2
-  min_ansible_version: 2.0.1
+  min_ansible_version: 2.2.0.0
   platforms:
     - name: EL
       versions:
